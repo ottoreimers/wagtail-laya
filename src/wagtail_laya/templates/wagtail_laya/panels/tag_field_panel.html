@@ -1,0 +1,16 @@
+{% load wagtailadmin_tags i18n %}
+{% include "wagtailadmin/shared/field.html" with show_label=False help_text=self.help_text %}
+<div class="w-mt-2"
+     data-controller="laya-suggest"
+     data-laya-suggest-url-value="{{ laya_url }}"
+     data-laya-suggest-model-value="{{ laya_model }}"
+     data-laya-suggest-field-value="{{ self.field_name }}"
+     data-laya-suggest-messages-value="{{ laya_messages }}">
+    <button type="button"
+            class="button button-small button-secondary bicolor button--icon"
+            data-action="laya-suggest#suggest"
+            data-laya-suggest-target="button">
+        {% icon name="tag" wrapped=1 %}{% trans "Let Laya suggest tags" %}
+    </button>
+    <span class="w-ml-2 w-text-14 w-text-text-meta" data-laya-suggest-target="status" aria-live="polite"></span>
+</div>

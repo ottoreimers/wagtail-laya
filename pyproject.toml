@@ -3,13 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "wagtail-jev"
-version = "0.3.0"
-description = "Classify Wagtail pages into tags with Jev, TypeSafe's System One model"
+name = "wagtail-laya"
+version = "0.1.0"
+description = "Tag and rate Wagtail pages with Laya, a local open-source decision model"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
-authors = [{ name = "Andreas Bernacca", email = "andreas.bernacca@frojd.se" }]
+authors = [
+    { name = "Otto Reimers", email = "otto.reimers@frojd.se" },
+    { name = "Andreas Bernacca", email = "andreas.bernacca@frojd.se" },
+]
 classifiers = [
     "Framework :: Django",
     "Framework :: Wagtail",
@@ -19,14 +22,14 @@ classifiers = [
 ]
 dependencies = [
     "wagtail>=6.3",
-    "typesafe-sdk>=0.7",
 ]
 
 [project.optional-dependencies]
+local = ["laya>=0.3.20"]
 test = ["pytest", "pytest-django"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/wagtail_jev"]
+packages = ["src/wagtail_laya"]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings"

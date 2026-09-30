@@ -6,7 +6,7 @@ from wagtail.rich_text import RichText
 
 from tests.conftest import contentstate
 from tests.testapp.models import ArticlePage
-from wagtail_jev.article import Article, Excerpt
+from wagtail_laya.article import Article, Excerpt
 
 
 @pytest.mark.django_db

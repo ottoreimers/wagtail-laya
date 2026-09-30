@@ -6,9 +6,9 @@ from wagtail import blocks
 from wagtail.fields import RichTextField, StreamField
 from wagtail.models import Page
 
-from wagtail_jev.models import JevTagField, JevTaggableMixin, PromptTemplates
-from wagtail_jev.quality import Level, Quality
-from wagtail_jev.panels import JevRatingFieldPanel, JevRatingPanel, JevTagFieldPanel
+from wagtail_laya.models import LayaTagField, LayaTaggableMixin, PromptTemplates
+from wagtail_laya.quality import Level, Quality
+from wagtail_laya.panels import LayaRatingFieldPanel, LayaRatingPanel, LayaTagFieldPanel
 
 
 class ArticleTag(TaggedItemBase):
@@ -25,7 +25,7 @@ class ArticleFeeling(ItemBase):
     content_object = ParentalKey("testapp.ArticlePage", related_name="feeling_items")
 
 
-class ArticlePage(JevTaggableMixin, Page):
+class ArticlePage(LayaTaggableMixin, Page):
     intro = RichTextField(blank=True)
     body = StreamField(
         [("paragraph", blocks.RichTextBlock()), ("heading", blocks.CharBlock())],
@@ -36,19 +36,19 @@ class ArticlePage(JevTaggableMixin, Page):
         through=ArticleFeeling, blank=True, related_name="feeling_tagged"
     )
 
-    jev_text_fields = ("title", "intro", "body")
-    jev_tag_fields = {
-        "tags": JevTagField(),
-        "feeling_tags": JevTagField(
+    laya_text_fields = ("title", "intro", "body")
+    laya_tag_fields = {
+        "tags": LayaTagField(),
+        "feeling_tags": LayaTagField(
             templates=PromptTemplates(
-                instructions="Does the mood of `article` match {tag}?",
+                instructions="Does the mood of `state` match {tag}?",
                 criteria_true="A reader would come away feeling {tag}.",
                 criteria_false="{tag} does not describe the article's tone.",
             ),
             threshold=0.8,
         ),
     }
-    jev_qualities = {
+    laya_qualities = {
         "readability": Quality(
             label="Readability",
             instructions="How easy is the text to understand?",
@@ -69,9 +69,9 @@ class ArticlePage(JevTaggableMixin, Page):
     }
 
     content_panels = Page.content_panels + [
-        JevRatingFieldPanel("intro", keys=["readability"]),
-        JevRatingFieldPanel("body", keys=["readability", "mood"]),
-        JevTagFieldPanel("tags"),
-        JevTagFieldPanel("feeling_tags"),
-        JevRatingPanel(),
+        LayaRatingFieldPanel("intro", keys=["readability"]),
+        LayaRatingFieldPanel("body", keys=["readability", "mood"]),
+        LayaTagFieldPanel("tags"),
+        LayaTagFieldPanel("feeling_tags"),
+        LayaRatingPanel(),
     ]

@@ -1,7 +1,6 @@
 import json
 
 import pytest
-from typesafe_sdk import NoulAnswer, Score, ScoreAnswer, SystemOneResponse, Usage
 
 
 def contentstate(text: str) -> str:
@@ -10,54 +9,51 @@ def contentstate(text: str) -> str:
     return json.dumps({"blocks": [block], "entityMap": {}})
 
 
-class FakeClient:
-    """Answers each Noul with a probability looked up from the tag name in its question,
-    and each Score with the per-level distribution configured under its question key."""
+class FakeBackend:
+    """Answers each noul with a probability looked up from the tag name in its question,
+    and each score with the per-level distribution configured under its question key.
 
-    def __init__(self, probabilities, distributions=None):
+    Confidences are looked up the same way (by tag name, or by score key) and default to
+    0.99, so tests that do not care about confidence pass the 0.8 gate.
+    """
+
+    def __init__(self, probabilities, distributions=None, confidences=None):
         self.probabilities = probabilities
         self.distributions = distributions or {}
+        self.confidences = confidences or {}
         self.calls = []
+        self.models = []
 
-    def system_one(self, state, questions, **kwargs):
+    def predict(self, state, questions, *, model=None):
         self.calls.append((state, questions))
+        self.models.append(model)
         answers = {}
         for key, question in questions.items():
-            if isinstance(question, Score):
-                answers[key] = self._score_answer(key, question)
+            if question["type"] == "score":
+                distribution = self.distributions[key]
+                assert len(distribution) == len(question["criteria"])
+                answers[key] = {
+                    "type": "score",
+                    "score": sum(i * p for i, p in enumerate(distribution)),
+                    "probabilities": {str(i): p for i, p in enumerate(distribution)},
+                    "answer_confidence": self.confidences.get(key, 0.99),
+                }
             else:
-                tag = next(t for t in self.probabilities if repr(t) in question.instructions)
-                answers[key] = NoulAnswer(type="noul", noul=self.probabilities[tag])
-        return SystemOneResponse(
-            model="jev-test", answers=answers, usage=Usage(input_tokens=1, output_tokens=1)
-        )
-
-    def _score_answer(self, key, question):
-        distribution = self.distributions[key]
-        assert len(distribution) == len(question.criteria)
-        return ScoreAnswer(
-            type="score",
-            score=sum(i * p for i, p in enumerate(distribution)),
-            confidence=max(distribution),
-            legend={i: c for i, c in enumerate(question.criteria)},
-            probabilities={i: p for i, p in enumerate(distribution)},
-        )
-
-    def close(self):
-        pass
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        pass
+                # Longest match, so a tag that is part of another tag's name ("py" in "python") is not picked by mistake.
+                tag = max((t for t in self.probabilities if t in question["instructions"]), key=len)
+                answers[key] = {
+                    "type": "noul",
+                    "noul": self.probabilities[tag],
+                    "answer_confidence": self.confidences.get(tag, 0.99),
+                }
+        return {"model": "laya-test", "answers": answers}
 
 
 @pytest.fixture
-def fake_client(monkeypatch):
-    def make(probabilities=None, distributions=None):
-        client = FakeClient(probabilities or {}, distributions)
-        monkeypatch.setattr("wagtail_jev.client.get_client", lambda: client)
-        return client
+def fake_backend(monkeypatch):
+    def make(probabilities=None, distributions=None, confidences=None):
+        backend = FakeBackend(probabilities or {}, distributions, confidences)
+        monkeypatch.setattr("wagtail_laya.client.get_backend", lambda: backend)
+        return backend
 
     return make

@@ -1,0 +1,17 @@
+{% load wagtailadmin_tags %}
+<div class="{{ laya_wrapper_class }}"
+     data-controller="laya-rate"
+     data-laya-rate-url-value="{{ laya_url }}"
+     data-laya-rate-model-value="{{ laya_model }}"
+     data-laya-rate-field-value="{{ laya_field }}"
+     data-laya-rate-keys-value="{{ laya_keys }}"
+     data-laya-rate-messages-value="{{ laya_messages }}">
+    <button type="button"
+            class="button button-small button-secondary bicolor button--icon"
+            data-action="laya-rate#rate"
+            data-laya-rate-target="button">
+        {% icon name="view" wrapped=1 %}{{ laya_button_label }}
+    </button>
+    <span class="w-ml-2 w-text-14 w-text-text-meta" data-laya-rate-target="status" aria-live="polite"></span>
+    <div class="w-mt-2 w-text-14" data-laya-rate-target="ratings" aria-live="polite"></div>
+</div>

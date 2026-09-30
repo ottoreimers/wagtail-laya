@@ -4,7 +4,7 @@ import django.db.models.deletion
 import modelcluster.contrib.taggit
 import modelcluster.fields
 import wagtail.fields
-import wagtail_jev.models
+import wagtail_laya.models
 from django.conf import settings
 from django.db import migrations, models
 
@@ -29,7 +29,7 @@ class Migration(migrations.Migration):
             options={
                 'abstract': False,
             },
-            bases=(wagtail_jev.models.JevTaggableMixin, 'wagtailcore.page'),
+            bases=(wagtail_laya.models.LayaTaggableMixin, 'wagtailcore.page'),
         ),
         migrations.CreateModel(
             name='FeelingTag',

@@ -4,7 +4,7 @@ ALLOWED_HOSTS = ["*"]
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
 INSTALLED_APPS = [
     "tests.testapp",
-    "wagtail_jev",
+    "wagtail_laya",
     "wagtail.contrib.forms",
     "wagtail.contrib.redirects",
     "wagtail.embeds",
@@ -52,4 +52,3 @@ WAGTAIL_SITE_NAME = "test"
 WAGTAILADMIN_BASE_URL = "http://testserver"
 USE_TZ = True
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
-WAGTAIL_JEV_API_KEY = "test-key"

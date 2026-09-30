@@ -1,9 +1,9 @@
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
-from typesafe_sdk import Score, TypeSafeError
+from wagtail_laya.errors import LayaError
 
-from tests.conftest import FakeClient, contentstate
+from tests.conftest import contentstate
 
 DISTRIBUTIONS = {"readability": [0.55, 0.0, 0.45], "mood": [0.1, 0.1, 0.8]}
 
@@ -17,7 +17,7 @@ def admin_client(client, db):
 
 def _form_data(**overrides):
     data = {
-        "jev_model": "testapp.ArticlePage",
+        "laya_model": "testapp.ArticlePage",
         "title": "Python packaging",
         "intro": contentstate("How to build wheels"),
         "body-count": "1",
@@ -31,10 +31,10 @@ def _form_data(**overrides):
     return data
 
 
-def test_rate_sends_one_score_per_key_built_from_form_data(admin_client, fake_client):
-    client = fake_client(distributions=DISTRIBUTIONS)
+def test_rate_sends_one_score_per_key_built_from_form_data(admin_client, fake_backend):
+    backend = fake_backend(distributions=DISTRIBUTIONS)
 
-    response = admin_client.post(reverse("wagtail_jev:rate"), _form_data(jev_keys=["readability"]))
+    response = admin_client.post(reverse("wagtail_laya:rate"), _form_data(laya_keys=["readability"]))
 
     assert response.status_code == 200
     assert response.json() == {
@@ -44,6 +44,7 @@ def test_rate_sends_one_score_per_key_built_from_form_data(admin_client, fake_cl
                 "label": "Readability",
                 "top_label": "Easy",
                 "top_probability": 0.55,
+                "confidence": 0.99,
                 "levels": [
                     {"label": "Easy", "probability": 0.55},
                     {"label": "Medium", "probability": 0.0},
@@ -52,102 +53,103 @@ def test_rate_sends_one_score_per_key_built_from_form_data(admin_client, fake_cl
             }
         ]
     }
-    assert len(client.calls) == 1
-    state, questions = client.calls[0]
+    assert len(backend.calls) == 1
+    state, questions = backend.calls[0]
     assert state == {"article": {"title": "Python packaging", "body": "How to build wheels\n\nSetup"}}
     assert list(questions) == ["readability"]
-    assert isinstance(questions["readability"], Score)
+    assert questions["readability"]["type"] == "score"
 
 
-def test_rate_with_no_keys_rates_every_declared_quality(admin_client, fake_client):
-    client = fake_client(distributions=DISTRIBUTIONS)
+def test_rate_with_no_keys_rates_every_declared_quality(admin_client, fake_backend):
+    backend = fake_backend(distributions=DISTRIBUTIONS)
 
-    response = admin_client.post(reverse("wagtail_jev:rate"), _form_data())
+    response = admin_client.post(reverse("wagtail_laya:rate"), _form_data())
 
     assert response.status_code == 200
     assert [(r["key"], r["label"], r["top_label"]) for r in response.json()["ratings"]] == [
         ("readability", "Readability", "Easy"),
         ("mood", "mood", "Happy"),
     ]
-    assert len(client.calls) == 1
-    assert list(client.calls[0][1]) == ["readability", "mood"]
+    assert len(backend.calls) == 1
+    assert list(backend.calls[0][1]) == ["readability", "mood"]
 
 
-def test_rate_returns_ratings_in_declaration_order_whatever_the_key_order(admin_client, fake_client):
-    fake_client(distributions=DISTRIBUTIONS)
-    response = admin_client.post(reverse("wagtail_jev:rate"), _form_data(jev_keys=["mood", "readability"]))
+def test_rate_returns_ratings_in_declaration_order_whatever_the_key_order(admin_client, fake_backend):
+    fake_backend(distributions=DISTRIBUTIONS)
+    response = admin_client.post(reverse("wagtail_laya:rate"), _form_data(laya_keys=["mood", "readability"]))
     assert [r["key"] for r in response.json()["ratings"]] == ["readability", "mood"]
 
 
-def test_rate_empty_article_makes_no_request_and_returns_no_ratings(admin_client, fake_client):
-    client = fake_client(distributions=DISTRIBUTIONS)
+def test_rate_empty_article_makes_no_request_and_returns_no_ratings(admin_client, fake_backend):
+    backend = fake_backend(distributions=DISTRIBUTIONS)
 
     response = admin_client.post(
-        reverse("wagtail_jev:rate"), {"jev_model": "testapp.ArticlePage", "title": " ", "intro": ""}
+        reverse("wagtail_laya:rate"), {"laya_model": "testapp.ArticlePage", "title": " ", "intro": ""}
     )
 
     assert response.status_code == 200
     assert response.json() == {"ratings": []}
-    assert client.calls == []
+    assert backend.calls == []
 
 
-def test_rate_rejects_unknown_key_before_any_request(admin_client, fake_client):
-    client = fake_client(distributions=DISTRIBUTIONS)
-    response = admin_client.post(reverse("wagtail_jev:rate"), _form_data(jev_keys=["nope"]))
+def test_rate_rejects_unknown_key_before_any_request(admin_client, fake_backend):
+    backend = fake_backend(distributions=DISTRIBUTIONS)
+    response = admin_client.post(reverse("wagtail_laya:rate"), _form_data(laya_keys=["nope"]))
     assert response.status_code == 400
     assert "nope" in response.json()["error"]
-    assert client.calls == []
+    assert backend.calls == []
 
 
 def test_rate_rejects_unknown_model(admin_client, db):
-    response = admin_client.post(reverse("wagtail_jev:rate"), {"jev_model": "nope.Nope"})
+    response = admin_client.post(reverse("wagtail_laya:rate"), {"laya_model": "nope.Nope"})
     assert response.status_code == 400
 
 
-def test_rate_rejects_non_jev_model(admin_client, db):
-    response = admin_client.post(reverse("wagtail_jev:rate"), {"jev_model": "wagtailcore.Page"})
+def test_rate_rejects_non_laya_model(admin_client, db):
+    response = admin_client.post(reverse("wagtail_laya:rate"), {"laya_model": "wagtailcore.Page"})
     assert response.status_code == 400
 
 
-def test_rate_returns_502_when_typesafe_fails(admin_client, monkeypatch, db):
-    class FailingClient(FakeClient):
-        def system_one(self, state, questions, **kwargs):
-            raise TypeSafeError("jev is down")
+class DownBackend:
+    def predict(self, state, questions, *, model=None):
+        raise LayaError("laya is down")
 
-    monkeypatch.setattr("wagtail_jev.client.get_client", lambda: FailingClient({}))
 
-    response = admin_client.post(reverse("wagtail_jev:rate"), _form_data())
+def test_rate_returns_502_when_laya_fails(admin_client, monkeypatch, db):
+    monkeypatch.setattr("wagtail_laya.client.get_backend", lambda: DownBackend())
+
+    response = admin_client.post(reverse("wagtail_laya:rate"), _form_data())
 
     assert response.status_code == 502
-    assert "jev is down" in response.json()["error"]
+    assert "laya is down" in response.json()["error"]
 
 
 def test_rate_requires_admin(client, db):
-    response = client.post(reverse("wagtail_jev:rate"), {"jev_model": "testapp.ArticlePage"})
+    response = client.post(reverse("wagtail_laya:rate"), {"laya_model": "testapp.ArticlePage"})
     assert response.status_code in (302, 403)
 
 
-def test_rate_a_field_sends_only_that_fields_excerpt(admin_client, fake_client):
-    client = fake_client(distributions=DISTRIBUTIONS)
+def test_rate_a_field_sends_only_that_fields_excerpt(admin_client, fake_backend):
+    backend = fake_backend(distributions=DISTRIBUTIONS)
 
     response = admin_client.post(
-        reverse("wagtail_jev:rate"), _form_data(jev_field="intro", jev_keys=["readability"])
+        reverse("wagtail_laya:rate"), _form_data(laya_field="intro", laya_keys=["readability"])
     )
 
     assert response.status_code == 200
     assert [(r["key"], r["top_label"]) for r in response.json()["ratings"]] == [("readability", "Easy")]
-    assert len(client.calls) == 1
-    state, questions = client.calls[0]
+    assert len(backend.calls) == 1
+    state, questions = backend.calls[0]
     assert state == {"text": "How to build wheels"}
     assert list(questions) == ["readability"]
-    assert isinstance(questions["readability"], Score)
+    assert questions["readability"]["type"] == "score"
 
 
-def test_rate_a_stream_field_flattens_the_whole_stream(admin_client, fake_client):
-    client = fake_client(distributions=DISTRIBUTIONS)
+def test_rate_a_stream_field_flattens_the_whole_stream(admin_client, fake_backend):
+    backend = fake_backend(distributions=DISTRIBUTIONS)
     data = _form_data(
-        jev_field="body",
-        jev_keys=["readability", "mood"],
+        laya_field="body",
+        laya_keys=["readability", "mood"],
         **{
             "body-count": "2",
             "body-1-type": "paragraph",
@@ -157,30 +159,40 @@ def test_rate_a_stream_field_flattens_the_whole_stream(admin_client, fake_client
         },
     )
 
-    response = admin_client.post(reverse("wagtail_jev:rate"), data)
+    response = admin_client.post(reverse("wagtail_laya:rate"), data)
 
     assert response.status_code == 200
     assert [r["key"] for r in response.json()["ratings"]] == ["readability", "mood"]
-    assert client.calls[0][0] == {"text": "Setup\nRun pip"}
-    assert list(client.calls[0][1]) == ["readability", "mood"]
+    assert backend.calls[0][0] == {"text": "Setup\nRun pip"}
+    assert list(backend.calls[0][1]) == ["readability", "mood"]
 
 
-def test_rate_a_blank_field_makes_no_request_and_returns_no_ratings(admin_client, fake_client):
-    client = fake_client(distributions=DISTRIBUTIONS)
+def test_rate_a_blank_field_makes_no_request_and_returns_no_ratings(admin_client, fake_backend):
+    backend = fake_backend(distributions=DISTRIBUTIONS)
 
     response = admin_client.post(
-        reverse("wagtail_jev:rate"), _form_data(jev_field="intro", intro=contentstate(" "))
+        reverse("wagtail_laya:rate"), _form_data(laya_field="intro", intro=contentstate(" "))
     )
 
     assert response.status_code == 200
     assert response.json() == {"ratings": []}
-    assert client.calls == []
+    assert backend.calls == []
 
 
 @pytest.mark.parametrize("field_name", ["nope", "live", "tags"])
-def test_rate_rejects_unknown_and_unsupported_fields(admin_client, fake_client, field_name):
-    client = fake_client(distributions=DISTRIBUTIONS)
-    response = admin_client.post(reverse("wagtail_jev:rate"), _form_data(jev_field=field_name))
+def test_rate_rejects_unknown_and_unsupported_fields(admin_client, fake_backend, field_name):
+    backend = fake_backend(distributions=DISTRIBUTIONS)
+    response = admin_client.post(reverse("wagtail_laya:rate"), _form_data(laya_field=field_name))
     assert response.status_code == 400
     assert field_name in response.json()["error"]
-    assert client.calls == []
+    assert backend.calls == []
+
+
+def test_rate_reports_confidence_without_an_unsure_flag(admin_client, fake_backend):
+    # For a score, Laya's confidence is the top level's probability, so an "unsure" flag
+    # would only repeat what the editor already sees.
+    fake_backend(distributions=DISTRIBUTIONS, confidences={"readability": 0.3})
+    response = admin_client.post(reverse("wagtail_laya:rate"), _form_data(laya_keys=["readability"]))
+    rating = response.json()["ratings"][0]
+    assert rating["confidence"] == 0.3
+    assert "unsure" not in rating
