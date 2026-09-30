@@ -28,7 +28,8 @@ class Command(BaseCommand):
         parser.add_argument("model", help="app_label.ModelName of a LayaTaggableMixin page")
         parser.add_argument("--field", action="append", dest="fields", help="Tag field(s) to process")
         parser.add_argument("--threshold", type=float, default=None)
-        parser.add_argument("--max-tags", type=int, default=None)
+        parser.add_argument("--max-tags", type=int, default=None, help="0 means no cap")
+        parser.add_argument("--margin", type=float, default=None, help="Keep tags this close to the best")
         parser.add_argument("--apply", action="store_true", help="Save suggestions as a draft")
         parser.add_argument("--publish", action="store_true", help="Publish after applying")
         parser.add_argument("--ids", nargs="*", type=int, help="Restrict to these page IDs")
@@ -43,6 +44,8 @@ class Command(BaseCommand):
             overrides["threshold"] = options["threshold"]
         if options["max_tags"] is not None:
             overrides["max_tags"] = options["max_tags"]
+        if options["margin"] is not None:
+            overrides["margin"] = options["margin"]
 
         names = options["fields"] or list(model.laya_tag_fields)
         try:

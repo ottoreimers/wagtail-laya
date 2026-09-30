@@ -19,6 +19,7 @@ def tags(db):
 def test_bind_resolves_unset_attributes_from_settings(settings):
     settings.WAGTAIL_LAYA_THRESHOLD = 0.42
     settings.WAGTAIL_LAYA_MAX_TAGS = 3
+    settings.WAGTAIL_LAYA_MARGIN = 0.05
     settings.WAGTAIL_LAYA_INSTRUCTIONS = "Is this about {tag}?"
     settings.WAGTAIL_LAYA_CRITERIA_TRUE = "yes {tag}"
     settings.WAGTAIL_LAYA_CRITERIA_FALSE = "no {tag}"
@@ -27,6 +28,7 @@ def test_bind_resolves_unset_attributes_from_settings(settings):
 
     assert tag_field.threshold == 0.42
     assert tag_field.max_tags == 3
+    assert tag_field.margin == 0.05
     assert tag_field.templates == PromptTemplates("Is this about {tag}?", "yes {tag}", "no {tag}")
 
 
@@ -91,7 +93,8 @@ def test_score_returns_every_candidate_sorted_high_to_low(fake_backend):
 
 def test_score_ignores_threshold_and_cap(fake_backend):
     fake_backend({"a": 0.95, "b": 0.05})
-    assert [s.name for s in _field(["a", "b"], threshold=0.9, max_tags=1).score(ARTICLE)] == ["a", "b"]
+    result = _field(["a", "b"], threshold=0.9, max_tags=1, margin=0.01).score(ARTICLE)
+    assert [s.name for s in result] == ["a", "b"]
 
 
 def test_score_batches_candidates(fake_backend, settings):
@@ -149,6 +152,31 @@ def test_suggest_applies_max_tags_and_field_threshold(fake_backend):
         ArticlePage, "tags"
     )
     assert [s.name for s in tag_field.suggest(ARTICLE)] == ["a", "b"]
+
+
+def test_suggest_caps_at_five_tags_by_default(fake_backend):
+    # On a real site, 15-30 of 148 tags passed 0.6: Laya's ranking was sensible but its
+    # absolute probabilities ran high, so the default keeps only the best few.
+    names = [f"t{i}" for i in range(8)]
+    fake_backend({name: 0.9 - i / 100 for i, name in enumerate(names)})
+    assert [s.name for s in _field(names).suggest(ARTICLE)] == names[:5]
+
+
+def test_suggest_max_tags_zero_means_no_cap(fake_backend):
+    names = [f"t{i}" for i in range(8)]
+    fake_backend({name: 0.9 for name in names})
+    assert len(_field(names, max_tags=0).suggest(ARTICLE)) == 8
+
+
+def test_suggest_margin_keeps_only_tags_close_to_the_best(fake_backend):
+    fake_backend({"a": 0.97, "b": 0.92, "c": 0.86, "d": 0.3})
+    result = _field(["a", "b", "c", "d"], margin=0.1).suggest(ARTICLE)
+    assert [s.name for s in result] == ["a", "b"]  # c is 0.11 below the best
+
+
+def test_suggest_margin_still_respects_the_threshold(fake_backend):
+    fake_backend({"a": 0.5, "b": 0.45})
+    assert _field(["a", "b"], margin=0.1).suggest(ARTICLE) == []
 
 
 def test_suggest_never_asks_about_existing_tags(fake_backend):

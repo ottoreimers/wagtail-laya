@@ -10,8 +10,8 @@ decision model that runs on your own servers, and show what it says.
   readability or mood. The result is shown to the editor and never saved. Rating is
   **experimental**: see "Qualities" below.
 
-Laya runs locally: no API key, no per-request cost, and page text never leaves your
-infrastructure. One button press is one request, no matter how many tags or scales it
+Laya runs on your own servers: no API key, no per-request cost, and page text never
+leaves your infrastructure. One button press is one request, no matter how many tags or scales it
 covers.
 
 wagtail-laya is a fork of [wagtail-jev](https://github.com/rinti/wagtail-jev) by Andreas
@@ -19,19 +19,9 @@ Bernacca, which does the same with TypeSafe's hosted Jev model.
 
 ## Install
 
-Laya can run inside Django, or as a separate server that several sites share.
-
-**Inside Django** (simplest; each web worker loads its own copy of the model):
-
-```sh
-pip install "wagtail-laya[local]"
-```
-
-This installs Laya and PyTorch. The model downloads from Hugging Face on first use and
-loads when the first button is pressed after a restart. That first press can take up to
-a minute; later presses take well under a second on a GPU and a few seconds on a CPU.
-
-**As a shared server** (one model in memory, on a GPU machine if you have one):
+Run Laya as a separate server and point your sites at it. This is the setup for
+production: one copy of the model in memory, on a GPU machine if you have one, shared
+by every web worker and every site.
 
 ```sh
 # on the Laya machine
@@ -52,6 +42,19 @@ WAGTAIL_LAYA_API_KEY = "choose-a-secret"   # or the LAYA_API_KEY environment var
 `laya.serve` reads `LAYA_HOST`, `LAYA_PORT`, `LAYA_DEVICE`, `LAYA_THREADS`,
 `LAYA_PRELOAD` and `LAYA_API_KEY` from the environment. It accepts at most 64 questions
 per request, which is why `WAGTAIL_LAYA_BATCH_SIZE` defaults to 40.
+
+**For local development only**, Laya can run inside Django instead:
+
+```sh
+pip install "wagtail-laya[local]"
+```
+
+This installs Laya and PyTorch. The model downloads from Hugging Face on first use and
+loads when the first button is pressed after a restart; that first press can take a
+minute or more. Do not use this on a web server. Every worker process loads its own
+copy of the model, and a site with pages in several languages can load both the English
+and the multilingual checkpoint into one process. That is more memory than a typical
+set of uWSGI or Gunicorn workers has.
 
 Either way, add the app to your Django settings:
 
@@ -101,8 +104,8 @@ Laya reads the start of the page only: about the first 2,000 characters
 ### Several tag fields
 
 A page can have more than one tag field. Give each one its own `LayaTagField` in
-`laya_tag_fields`. Each can have its own question, its own threshold and its own list
-of tags. By default, the list is every tag in that field's tag model.
+`laya_tag_fields`. Each can have its own question, its own threshold, cap and margin, and
+its own list of tags. By default, the list is every tag in that field's tag model.
 
 Below, `tags` keeps the defaults. `feeling_tags` changes all three. `PromptTemplates`
 holds the question, in the same three parts as the prompt settings:
@@ -151,7 +154,8 @@ manage.py laya_tag_pages blog.ArticlePage --field feeling_tags
 - With no options it only prints what Laya would suggest.
 - `--apply` saves the tags as a new draft revision of each page. Add `--publish` to
   publish as well.
-- `--threshold` overrides the threshold and `--ids` limits the run to those pages.
+- `--threshold`, `--max-tags` and `--margin` override those settings. `--ids` limits
+  the run to those pages.
 - `--field` tags one tag field. The default is every field in `laya_tag_fields`.
 - If Laya answers with an error for one page, the command prints it and goes on. If Laya
   cannot be reached or started at all, it stops at once.
@@ -170,7 +174,8 @@ field with `laya_tag_field()`. Then call its `suggest()` method with an `Article
 Article is just a title and a body.
 
 `suggest()` does the same work as the button. It skips tags the Article already has,
-scores the rest, and keeps only the tags above the threshold, up to the cap.
+scores the rest, and keeps only the tags above the threshold and within the margin, up
+to the cap.
 
 ```python
 from wagtail_laya.article import Article
@@ -181,7 +186,7 @@ for s in tag_field.suggest(article):
     print(s.name, s.probability, s.confidence)
 ```
 
-If you want every tag's probability with no threshold or cap, call
+If you want every tag's probability with no threshold, margin or cap, call
 `tag_field.score(article)` instead.
 
 ## Qualities
@@ -340,11 +345,12 @@ set per tag field, as shown in "Several tag fields" above.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `WAGTAIL_LAYA_URL` | `None` | A Laya server's base URL. If unset, Laya runs inside Django (needs `wagtail-laya[local]`) |
+| `WAGTAIL_LAYA_URL` | `None` | A Laya server's base URL. If unset, Laya runs inside Django (needs `wagtail-laya[local]`; for development only) |
 | `WAGTAIL_LAYA_API_KEY` | `None` | The server's `LAYA_API_KEY`. If unset, the `LAYA_API_KEY` environment variable is used |
 | `WAGTAIL_LAYA_MODEL` | `None` | Laya checkpoint: `"english"` or `"multilingual"`. If unset, Laya picks one per request by language |
 | `WAGTAIL_LAYA_THRESHOLD` | `0.6` | A tag is suggested only if its probability is at least this |
-| `WAGTAIL_LAYA_MAX_TAGS` | `None` | Suggest at most this many tags per page |
+| `WAGTAIL_LAYA_MAX_TAGS` | `5` | Suggest at most this many tags per page. `0` or `None` means no cap |
+| `WAGTAIL_LAYA_MARGIN` | `None` | Suggest only tags at most this far below the best one, for example `0.1`. `None` means off |
 | `WAGTAIL_LAYA_MAX_CHARS` | `2000` | Only the first this-many characters of the page text are sent. Laya cannot read much more |
 | `WAGTAIL_LAYA_BATCH_SIZE` | `40` | How many tags to ask about in one request. Keep it at 64 or below with a Laya server |
 | `WAGTAIL_LAYA_TAG_MODEL` | `"taggit.Tag"` | The model whose rows are the tags Laya can choose from |
@@ -378,14 +384,31 @@ this.
 
 ## Tuning
 
-Start with the default threshold. Run `laya_tag_pages` without `--apply` on some pages.
-Compare the output with the tags your editors would choose.
+Laya ranks tags well, but its probabilities run high. On one real site with 148 tags,
+unrelated tags often scored 80–90%, and 15–30 tags per page passed the 0.6 threshold.
+The best tags were still at the top of the list. So rely on the ranking more than on
+the numbers:
 
-- If Laya suggests wrong tags, raise the threshold.
-- If Laya misses good tags, lower the threshold or change the prompt.
+- `WAGTAIL_LAYA_MAX_TAGS` (default 5) keeps the top few tags, however high the rest
+  score.
+- `WAGTAIL_LAYA_MARGIN` keeps only the tags close to the best one. With `0.1` and a best
+  tag at 95%, only tags at 85% or higher are suggested. On a page that fits one tag
+  clearly, that is fewer than the cap; on a page that fits many, up to the cap.
+- The threshold is a floor. On a page where nothing fits, it keeps weak tags out.
 
-Swedish and other languages work: Laya switches to its multilingual checkpoint by itself.
-English is still the most accurate. Test on your own content.
+Run `laya_tag_pages` without `--apply` on some pages, trying `--max-tags` and
+`--margin`. Compare the output with the tags your editors would choose.
+
+- If Laya suggests wrong tags, lower the cap or add a margin.
+- If Laya misses good tags, raise the cap, widen the margin or change the prompt.
+
+Each tag is one question to Laya, so a site with many tags waits longer for each
+suggestion. On a CPU, 148 tags took about 35 seconds per page. If only some tags could
+fit a page type, give its `LayaTagField` a shorter `candidates` list.
+
+Other languages work: Laya switches to its multilingual checkpoint by itself. The tags
+can stay in English. On the site above, German and Dutch pages ranked English tag names
+well. English is still the most accurate. Test on your own content.
 
 ## Development
 

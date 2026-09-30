@@ -1,12 +1,12 @@
 """The Tag field: one taggable manager on a page, with its own tag model, prompt
-templates, threshold and cap. The one place that turns an Article into Suggestions.
+templates, threshold, margin and cap. The one place that turns an Article into Suggestions.
 
 ``LayaTagField`` is what a page declares in ``laya_tag_fields``; every attribute may be
 ``None`` meaning "use the ``WAGTAIL_LAYA_*`` setting". ``LayaTagField.bind`` resolves
 those defaults against a model and field name once, producing a ``BoundTagField``.
 Its ``score`` asks Laya one Noul question per candidate tag ("does this article belong
 under tag X?") and returns every probability; ``suggest`` keeps those at or above the
-threshold, capped. Questions in a request run in parallel and cannot see each other,
+threshold and within the margin of the best, capped. Questions in a request run in parallel and cannot see each other,
 so each tag is judged independently and several may apply.
 """
 
@@ -66,13 +66,15 @@ class LayaTagField:
     :param candidates: callable returning candidate tag names. Defaults to every
         row of the tag model behind the field.
     :param threshold: minimum probability for a suggestion.
-    :param max_tags: cap on suggestions.
+    :param max_tags: cap on suggestions. ``0`` means no cap.
+    :param margin: keep only suggestions at most this far below the best one.
     """
 
     templates: PromptTemplates | None = None
     candidates: Callable[[], Iterable[str]] | None = None
     threshold: float | None = None
     max_tags: int | None = None
+    margin: float | None = None
 
     def bind(self, model, field_name: str) -> "BoundTagField":
         """Resolve every ``None`` against the settings for ``field_name`` on ``model``."""
@@ -83,6 +85,7 @@ class LayaTagField:
             candidate_source=self.candidates or _default_candidate_source(model, field_name),
             threshold=get_setting("WAGTAIL_LAYA_THRESHOLD") if self.threshold is None else self.threshold,
             max_tags=get_setting("WAGTAIL_LAYA_MAX_TAGS") if self.max_tags is None else self.max_tags,
+            margin=get_setting("WAGTAIL_LAYA_MARGIN") if self.margin is None else self.margin,
         )
 
 
@@ -96,6 +99,7 @@ class BoundTagField:
     candidate_source: Callable[[], Iterable[str]]
     threshold: float
     max_tags: int | None
+    margin: float | None = None
 
     def candidates(self, article: Article) -> list[str]:
         """Candidate tag names for this field, minus the Article's existing tags."""
@@ -124,13 +128,18 @@ class BoundTagField:
         return results
 
     def suggest(self, article: Article, *, backend: Backend | None = None) -> list[TagSuggestion]:
-        """:meth:`score`, keeping only suggestions at or above the threshold, capped at
-        ``max_tags``.
+        """:meth:`score`, keeping only suggestions at or above the threshold and at most
+        ``margin`` below the best one, capped at ``max_tags``.
+
+        Laya's probabilities run high across the board while its ranking holds up, so
+        the margin and the cap, which only look at the ranking, do most of the work.
 
         There is no confidence gate here: for a yes/no answer Laya's confidence is
         max(p, 1 - p), so gating on it would quietly raise the threshold.
         """
         kept = [s for s in self.score(article, backend=backend) if s.probability >= self.threshold]
+        if kept and self.margin is not None:
+            kept = [s for s in kept if s.probability >= kept[0].probability - self.margin]
         return kept[: self.max_tags] if self.max_tags else kept
 
     def _question(self, tag: str) -> dict:

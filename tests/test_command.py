@@ -56,6 +56,17 @@ def test_command_threshold_option_overrides_every_field(page, fake_backend):
     assert [t.name for t in latest.feeling_tags.all()] == ["calm"]
 
 
+def test_command_margin_option_overrides_every_field(page, fake_backend):
+    FeelingTag.objects.create(name="angry")
+    fake_backend({"python": 0.9, "cooking": 0.7, "calm": 0.95, "angry": 0.9})
+
+    call_command("laya_tag_pages", "testapp.ArticlePage", "--margin", "0.1", "--apply")
+
+    latest = ArticlePage.objects.get(id=page.id).get_latest_revision_as_object()
+    assert [t.name for t in latest.tags.all()] == ["python"]  # cooking is 0.2 below
+    assert sorted(t.name for t in latest.feeling_tags.all()) == ["angry", "calm"]
+
+
 def test_command_reports_laya_errors_and_carries_on(page, monkeypatch, capsys):
     class Down:
         def predict(self, state, questions, *, model=None):

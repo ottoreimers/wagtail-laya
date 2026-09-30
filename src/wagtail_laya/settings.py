@@ -11,8 +11,11 @@ DEFAULTS = {
     "WAGTAIL_LAYA_MODEL": None,
     # Minimum Noul probability for a tag to count as suggested.
     "WAGTAIL_LAYA_THRESHOLD": 0.6,
-    # Upper bound on suggestions returned per page. None means no cap.
-    "WAGTAIL_LAYA_MAX_TAGS": None,
+    # Upper bound on suggestions returned per page. None or 0 means no cap. Laya's
+    # probabilities run high, so without a cap dozens of tags can pass the threshold.
+    "WAGTAIL_LAYA_MAX_TAGS": 5,
+    # Keep only suggestions at most this far below the best one, e.g. 0.1. None means off.
+    "WAGTAIL_LAYA_MARGIN": None,
     # Characters of page text sent as state. Laya reads at most 512 tokens per question and cuts the rest itself.
     "WAGTAIL_LAYA_MAX_CHARS": 2000,
     # Candidate tags per request. Each tag is one question; a Laya server accepts at most 64.
